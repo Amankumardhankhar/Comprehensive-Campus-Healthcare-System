@@ -1,0 +1,71 @@
+services:
+
+  # ── Database ────────────────────────────────────────────────
+  # Not published to the host — only the app container reaches it
+  # over the internal compose network (service name: mongo).
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Analytics AI (risk-profiling · disease-trend · forecasting)
+  analytics-ai:
+    build:
+      context: .
+      dockerfile: docker/analytics.Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: "8000"
+
+  # ── Kiosk AI (orchestrator + 6 sub-services)
+  kiosk-ai:
+    build:
+      context: .
+      dockerfile: docker/kiosk.Dockerfile
+    ports:
+      - "8100:8100"
+    environment:
+      PORT: "8100"
+
+  # ── Node.js app + React frontend ────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5050:5050"
+    environment:
+      NODE_ENV: production
+      PORT: "5050"
+      MONGO_URI: mongodb://mongo:27017/campus-healthcare
+      # Secrets and deploy-specific values come from .env (see .env.example).
+      # Compose fails fast if a required one is missing.
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      CLIENT_URL: ${CLIENT_URL:?set CLIENT_URL in .env}
+      APP_URL: ${APP_URL:?set APP_URL in .env}
+      # All three analytics URLs point to the same nginx proxy
+      AI_RISK_URL: http://analytics-ai:8000
+      AI_TREND_URL: http://analytics-ai:8000
+      AI_FORECAST_URL: http://analytics-ai:8000
+      AI_ORCHESTRATOR_URL: http://kiosk-ai:8100
+      # Password-reset email (Resend). If RESEND_API_KEY is blank,
+      # reset links are logged to the container console instead.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-Campus Healthcare <onboarding@resend.dev>}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      analytics-ai:
+        condition: service_started
+      kiosk-ai:
+        condition: service_started
+
+volumes:
+  mongo_data:
