@@ -14,6 +14,11 @@ import { apiFetch, getToken } from '../lib/api.js';
 const STAGES = ['heart', 'temperature', 'spO2', 'respiration'];
 const CAPTURE_MS = 5000;
 
+// Photo-based screening (camera → image-analysis model) is disabled on this
+// deployment — the PyTorch image service is too heavy for the free-tier VM.
+// Vitals capture is unaffected. Flip to true if running on capable hardware.
+const IMAGE_SCREENING_ENABLED = false;
+
 const normalRange = {
   heartRate: [55, 100],
   temperature: [97.0, 99.5],
@@ -81,6 +86,10 @@ export default function KioskSensor() {
     }
     let cancelled = false;
     const start = async () => {
+      if (!IMAGE_SCREENING_ENABLED) {
+        setPhase('ready');
+        return;
+      }
       if (!window.isSecureContext) {
         setError('Camera requires HTTPS or localhost');
         setPhase('denied');
@@ -199,6 +208,10 @@ export default function KioskSensor() {
   const retry = async () => {
     setError('');
     setFrameDataUrl(null);
+    if (!IMAGE_SCREENING_ENABLED) {
+      setPhase('ready');
+      return;
+    }
     if (streamRef.current) {
       setPhase('ready');
       return;
@@ -298,10 +311,14 @@ export default function KioskSensor() {
             <div>
             <div className="mt-2 text-center">
               <h1 className={`text-4xl font-bold md:text-5xl ${textColor}`}>
-                {t('kioskSensor.heading')}
+                {IMAGE_SCREENING_ENABLED
+                  ? t('kioskSensor.heading')
+                  : t('kioskSensor.headingNoCamera')}
               </h1>
               <p className={`mx-auto mt-3 max-w-2xl text-base md:text-lg ${subText}`}>
-                {t('kioskSensor.subheading')}
+                {IMAGE_SCREENING_ENABLED
+                  ? t('kioskSensor.subheading')
+                  : t('kioskSensor.subheadingNoCamera')}
               </p>
             </div>
 
@@ -390,12 +407,34 @@ export default function KioskSensor() {
                       </div>
                     </>
                   )}
+
+                  {/* Photo-screening disabled on this deployment */}
+                  {!IMAGE_SCREENING_ENABLED && (
+                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-slate-900 p-8 text-center">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-400/15 ring-1 ring-amber-300/30">
+                        <svg className="h-7 w-7 text-amber-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M2 2l20 20" />
+                          <path d="M7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h13" />
+                          <path d="M9.5 4h5L16 6h4a2 2 0 0 1 2 2v8.5" />
+                        </svg>
+                      </div>
+                      <div className="text-base font-semibold text-white">
+                        {t('kioskSensor.imageUnavailableTitle')}
+                      </div>
+                      <div className="max-w-sm text-sm leading-relaxed text-white/75">
+                        {t('kioskSensor.imageUnavailableBody')}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Inline status / retake */}
                 <div className="mt-3 flex items-center justify-between gap-3">
                   <div className={`text-sm ${subText}`}>
-                    {phase === 'ready' && t('kioskSensor.readyHint')}
+                    {phase === 'ready' &&
+                      (IMAGE_SCREENING_ENABLED
+                        ? t('kioskSensor.readyHint')
+                        : t('kioskSensor.readyHintNoCamera'))}
                     {phase === 'capturing' &&
                       t('kioskSensor.capturingHint', {
                         stage: t(`kioskSensor.stages.${activeStage}`),

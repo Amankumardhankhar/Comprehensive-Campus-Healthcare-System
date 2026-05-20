@@ -16,7 +16,6 @@ const STAGES = [
   { key: 'anomaly', icon: AnomalyIcon },
   { key: 'disease', icon: DiseaseIcon },
   { key: 'risk', icon: RiskIcon },
-  { key: 'image', icon: ImageIcon },
   { key: 'medicine', icon: MedicineIcon },
   { key: 'decision', icon: DecisionIcon },
 ];
@@ -305,15 +304,6 @@ function RiskIcon() {
     <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 2L2 20h20L12 2z" />
       <path d="M12 9v5M12 17h.01" />
-    </svg>
-  );
-}
-function ImageIcon() {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="5" width="18" height="14" rx="2" />
-      <circle cx="9" cy="11" r="2" />
-      <path d="M21 17l-5-5-6 6" />
     </svg>
   );
 }

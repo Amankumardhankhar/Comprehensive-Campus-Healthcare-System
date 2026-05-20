@@ -136,12 +136,19 @@ const resources = {
         deniedBody: 'Camera access was denied or is not available.',
         deniedHint: 'You can still proceed without a camera image — readings will be simulated.',
         skipCamera: 'Capture without camera',
+        imageUnavailableTitle: 'Photo screening unavailable',
+        imageUnavailableBody:
+          'Due to hardware and free-tier account limitations, the AI photo-screening facility is currently not working. Your vitals are still captured below.',
+        readyHintNoCamera: 'Tap Start capture to record your vitals.',
+        headingNoCamera: 'Capture your vitals',
+        subheadingNoCamera:
+          'Tap Start capture to record your vitals. The photo-screening step is unavailable on this deployment.',
         heartRate: 'Heart rate',
         temperature: 'Temperature',
         spO2: 'Oxygen saturation',
         respiration: 'Respiration',
         simulatedNote:
-          'Readings below are simulated — hardware sensors (pulse oximeter, IR thermometer) are not connected in this prototype. The camera frame is real.',
+          'Readings below are simulated — hardware sensors (pulse oximeter, IR thermometer) are not connected in this prototype.',
         stages: {
           heart: 'heart rate',
           temperature: 'temperature',
