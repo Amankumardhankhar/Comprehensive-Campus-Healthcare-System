@@ -15,8 +15,9 @@ echo "[kiosk] starting medicine-recommender on :8103"
 python -m uvicorn main:app --app-dir /app/medicine-recommender \
   --host 0.0.0.0 --port 8103 --log-level warning &
 
-# image-analysis (port 8104) is skipped — requires PyTorch which exceeds free-tier RAM.
-# The orchestrator silently skips image screening when the service is unreachable.
+echo "[kiosk] starting image-analysis on :8104"
+python -m uvicorn main:app --app-dir /app/image-analysis \
+  --host 0.0.0.0 --port 8104 --log-level warning &
 
 echo "[kiosk] starting anomaly-detection on :8105"
 python -m uvicorn main:app --app-dir /app/anomaly-detection \
@@ -35,6 +36,7 @@ exec env \
   DISEASE_URL=http://127.0.0.1:8101 \
   RISK_URL=http://127.0.0.1:8102 \
   MEDICINE_URL=http://127.0.0.1:8103 \
+  IMAGE_URL=http://127.0.0.1:8104 \
   ANOMALY_URL=http://127.0.0.1:8105 \
   NLP_URL=http://127.0.0.1:8106 \
   python -m uvicorn main:app --app-dir /app/orchestrator \

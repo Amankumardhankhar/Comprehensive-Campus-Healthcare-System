@@ -19,7 +19,7 @@ python -m uvicorn main:app --app-dir /app/forecasting \
 echo "[analytics] waiting 25 s for model training..."
 sleep 25
 
-# Write nginx config with Render's dynamic PORT substituted
+# Render the nginx config with the runtime PORT substituted in
 envsubst '$PORT' < /etc/nginx/nginx.conf.template \
   > /etc/nginx/conf.d/default.conf
 

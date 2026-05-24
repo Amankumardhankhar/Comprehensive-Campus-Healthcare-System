@@ -1,0 +1,19 @@
+# Dependencies & build artifacts — installed/built inside the image
+**/node_modules
+**/dist
+**/build
+**/__pycache__
+**/*.pyc
+ai-services/venv
+**/venv
+
+# Local-only / non-build files
+.git
+.gitignore
+.env
+**/.env
+**/.DS_Store
+.DS_Store
+.claude
+status.md
+coverage

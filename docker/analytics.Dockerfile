@@ -23,6 +23,5 @@ COPY docker/nginx.conf.template /etc/nginx/nginx.conf.template
 COPY docker/analytics-start.sh /start.sh
 RUN chmod +x /start.sh
 
-# Render injects PORT at runtime; nginx will listen on it
 EXPOSE 8000
 CMD ["/start.sh"]
