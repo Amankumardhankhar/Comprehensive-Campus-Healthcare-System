@@ -37,7 +37,7 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: docker/app.Dockerfile
     ports:
       - "5050:5050"
     environment:

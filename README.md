@@ -1,3 +1,13 @@
+---
+title: Campus Healthcare
+emoji: 🏥
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Comprehensive Campus Healthcare & Pharmacy Management System
 
 An AI-enabled digital healthcare platform for campus dispensaries — replacing manual logbooks with a modern, data-driven system for medical records, pharmacy inventory, and predictive analytics.
