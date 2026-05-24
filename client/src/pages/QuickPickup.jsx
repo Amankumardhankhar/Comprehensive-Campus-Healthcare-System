@@ -30,6 +30,24 @@ export default function QuickPickup() {
   const [submitting, setSubmitting] = useState(false);
   const [openSession, setOpenSession] = useState(null);
   const [cancelling, setCancelling] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const visibleCatalog = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return catalog;
+    return catalog.filter((m) => {
+      const hay = [
+        m.name,
+        m.genericName,
+        m.category,
+        ...(m.indications || []),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [catalog, search]);
 
   const loadOpenSession = async () => {
     const res = await apiFetch(
@@ -316,8 +334,68 @@ export default function QuickPickup() {
                 )}
 
                 {!loading && (
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    {catalog.map((m) => {
+                  <>
+                    <div className="mb-4">
+                      <div className={`relative`}>
+                        <svg
+                          className={`pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 ${subText}`}
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <circle cx="11" cy="11" r="8" />
+                          <path d="M21 21l-4.3-4.3" />
+                        </svg>
+                        <input
+                          type="search"
+                          value={search}
+                          onChange={(e) => setSearch(e.target.value)}
+                          placeholder={t('quick.searchPlaceholder')}
+                          aria-label={t('quick.searchPlaceholder')}
+                          className={`w-full rounded-full py-2.5 pl-11 pr-10 text-sm outline-none ring-1 backdrop-blur transition-colors focus:ring-2 ${
+                            isDark
+                              ? 'bg-white/5 text-white placeholder:text-white/40 ring-white/15 focus:ring-brand-400'
+                              : 'bg-white/80 text-slate-900 placeholder:text-slate-400 ring-slate-200 focus:ring-brand-500'
+                          }`}
+                        />
+                        {search && (
+                          <button
+                            type="button"
+                            onClick={() => setSearch('')}
+                            aria-label="Clear search"
+                            className={`absolute right-3 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-xs ${
+                              isDark
+                                ? 'bg-white/10 text-white/80 hover:bg-white/20'
+                                : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                            }`}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                      {search && (
+                        <div className={`mt-2 text-xs ${subText}`}>
+                          {t('quick.searchResults', {
+                            count: visibleCatalog.length,
+                            total: catalog.length,
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {visibleCatalog.length === 0 && (
+                      <div
+                        className={`rounded-2xl p-6 text-center text-sm ring-1 ${cardBg} ${subText}`}
+                      >
+                        {t('quick.noResults')}
+                      </div>
+                    )}
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {visibleCatalog.map((m) => {
                       const q = qty[m.id] || 0;
                       const oos = !m.inStock;
                       const capPerItem = Math.min(
@@ -410,7 +488,8 @@ export default function QuickPickup() {
                         </div>
                       );
                     })}
-                  </div>
+                    </div>
+                  </>
                 )}
               </section>
             )}

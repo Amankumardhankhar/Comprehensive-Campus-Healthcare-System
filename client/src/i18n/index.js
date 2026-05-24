@@ -45,6 +45,9 @@ const resources = {
         itemsCount_other: '{{count}} items',
         proceed: 'Proceed to Payment',
         submitting: 'Creating session…',
+        searchPlaceholder: 'Search by name, generic, or symptom…',
+        searchResults: 'Showing {{count}} of {{total}}',
+        noResults: 'No medicines match your search.',
         openSession: {
           title: 'You have an unfinished pickup',
           bodyQuickCart: 'Resume payment for the items already added, or cancel to start over.',
@@ -379,6 +382,9 @@ const resources = {
         itemsCount_other: '{{count}} वस्तुएं',
         proceed: 'भुगतान पर जाएं',
         submitting: 'सेशन बन रहा है…',
+        searchPlaceholder: 'नाम, जेनेरिक या लक्षण से खोजें…',
+        searchResults: '{{total}} में से {{count}} दिखा रहे हैं',
+        noResults: 'आपकी खोज से कोई दवा मेल नहीं खाती।',
         openSession: {
           title: 'आपका एक अधूरा पिकअप है',
           bodyQuickCart: 'जोड़ी गई वस्तुओं का भुगतान पूरा करें, या नया शुरू करने के लिए रद्द करें।',
@@ -706,6 +712,9 @@ const resources = {
         itemsCount_other: '{{count}} பொருள்கள்',
         proceed: 'கட்டணத்திற்கு செல்',
         submitting: 'அமர்வு உருவாக்கப்படுகிறது…',
+        searchPlaceholder: 'பெயர், பொதுப் பெயர் அல்லது அறிகுறி மூலம் தேடவும்…',
+        searchResults: '{{total}} இல் {{count}} காட்டப்படுகிறது',
+        noResults: 'உங்கள் தேடலுக்கு எந்த மருந்தும் பொருந்தவில்லை.',
         openSession: {
           title: 'உங்களுக்கு நிலுவையில் ஒரு எடுப்பு உள்ளது',
           bodyQuickCart: 'சேர்த்த பொருள்களுக்கான கட்டணத்தை முடிக்கவும், அல்லது புதிதாக தொடங்க ரத்து செய்யவும்.',
