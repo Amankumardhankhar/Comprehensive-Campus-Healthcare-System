@@ -8,14 +8,9 @@ import {
 import { Medicine } from '../models/Medicine.js';
 import { ApiError } from '../utils/ApiError.js';
 
-// Hardcoded allowlist (basic OTC only — anything else must go through consultation).
-// Values match genericName on seeded Medicine documents.
-export const QUICK_PICKUP_ALLOWLIST = Object.freeze([
-  'paracetamol',
-  'oral rehydration salts',
-  'bandage',
-  'ascorbic acid',
-]);
+// Quick Pickup eligibility is enforced per-document by Medicine.dispensableByMachine.
+// The OTC seed sets this true on every safe-for-self-dispense item; prescription
+// stock stays at the default false, so it never appears here.
 
 export const QUICK_PICKUP_CAPS = Object.freeze({
   maxTotalInr: 200,
@@ -31,7 +26,6 @@ const newSessionId = () =>
 
 export const listCatalog = async () => {
   const docs = await Medicine.find({
-    genericName: { $in: [...QUICK_PICKUP_ALLOWLIST] },
     dispensableByMachine: true,
     isActive: true,
   }).sort({ name: 1 });
@@ -133,7 +127,6 @@ export const setCart = async (sessionId, user, { items = [] } = {}) => {
 
   const docs = await Medicine.find({
     _id: { $in: ids },
-    genericName: { $in: [...QUICK_PICKUP_ALLOWLIST] },
     dispensableByMachine: true,
     isActive: true,
   });
