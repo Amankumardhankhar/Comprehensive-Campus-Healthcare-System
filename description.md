@@ -2,61 +2,112 @@
 
 ## What It Is
 
-An AI-enabled digital dispensary platform for campus health centres. It replaces paper logbooks and manual prescription pads with a full-stack web system that records patient visits, manages pharmacy inventory, and applies machine-learning models to assist with triage and administration.
+An AI-enabled digital dispensary platform for campus health centres. It replaces paper logbooks and manual prescription pads with a full-stack web system that records patient visits, manages pharmacy inventory, applies machine-learning models to assist with triage, and surfaces real-time analytics for administrators.
+
+The platform is built around three principles:
+
+1. **Automation first, clinical second.** Routine OTC dispensing happens at a self-service kiosk; anything risky escalates to the campus health centre's existing clinical workflow.
+2. **Auditability over magic.** Every AI decision (predicted disease, risk class, recommended medicine) is stored with confidence scores so any dispense can be reviewed after the fact.
+3. **No paid services required.** The whole stack runs on free tiers — Hugging Face Spaces for compute, MongoDB Atlas for the database, Resend (optional) for email.
 
 ---
 
 ## User Roles
 
-| Role | What they can do |
-|------|-----------------|
-| **Student** | View own medical history, browse medicine availability |
-| **Staff** | Log patient visits, issue medicines, manage inventory |
-| **Admin** | Full system access + AI analytics dashboard |
+| Role | Sees |
+|------|------|
+| **Student** | Personal dashboard, kiosk symptom flow, Quick Pickup OTC browse, profile edit, password reset |
+| **Staff** | Patient visit logs, full inventory CRUD, kiosk session history |
+| **Admin** | Everything above plus user management, AI analytics dashboards (risk distribution, disease trend, demand forecast), system configuration |
+
+`/register` is open for student / staff but blocks self-registration as admin (enforced server-side in `auth.service.js`). The first admin must be seeded via the `seedAdmin.js` CLI script.
 
 ---
 
 ## Core Features
 
-### 1. Self-Service AI Kiosk
-Students walk up to a kiosk terminal, enter symptoms (typed or voice-transcribed), optionally provide vitals from a hardware sensor, and optionally take a photo. An AI pipeline analyses the input in real time and returns one of two decisions:
-- **DISPENSE** — prints a token; pharmacy vending machine releases OTC medicine
-- **REFER TO DOCTOR** — directs the student to the dispensary staff
+### 1. Self-service AI kiosk
 
-### 2. Quick Pickup
-Students with existing prescriptions scan a QR code to collect medicine without going through the full kiosk flow.
+The kiosk is the primary user-facing flow. A student walks up to a terminal and:
 
-### 3. Staff Dashboard
-Logs consultation records (symptoms, diagnosis, medicines issued), updates stock levels, and reviews kiosk session history.
+1. **Enters symptoms** — typed, voice-transcribed, or by tapping symptom chips (the chip set covers fever, headache, cough, sore throat, stomach pain, nausea, vomiting, body ache, diarrhea, runny nose).
+2. **Captures vitals** (optional) — heart rate, temperature, SpO2, respiration rate. The vitals page accepts both sensor input and manual entry.
+3. **Takes a photo** (optional, when enabled) — used by the image-analysis service for visible-condition screening.
+4. **Sees the AI verdict** — one of:
+   - **DISPENSE** — pharmacy vending releases the recommended OTC medicine. Session is marked complete with full audit trail.
+   - **CONSULT_DOCTOR** — full-screen high-contrast referral view with patient name, AI predictions, symptoms, vitals, and "why referred" reasons. Patient can hand the phone to a nurse for a 3-second glance, or share the summary on WhatsApp. The dashboard then shows a persistent referral banner until acknowledged.
 
-### 4. Admin Analytics
-Three ML-powered dashboards visible only to admins:
-- **Risk Distribution** — pie chart of patient risk levels (Low / Medium / High) across all students
-- **Disease Trend** — rolling moving-average line chart with Z-score anomaly flags for outbreak detection
-- **Demand Forecast** — 14–90 day SARIMA-based medicine demand forecast with reorder alerts
+End-to-end target latency is < 5 s on free-tier hardware.
 
-### 5. Inventory Management
-Real-time stock tracking with low-stock alerts; seeded with 8 OTC medicines on first boot.
+### 2. Quick Pickup (OTC catalog browse)
 
-### 6. Sensor Integration
-Hardware vitals sensors (temperature, heart rate, SpO2, respiration rate) stream readings to the backend, which feeds them directly into the AI pipeline.
+For users who know what they need. The Quick Pickup page is gated by two questions (under 12? known drug allergies?) and capped at ₹200 total / 2 units per item per session. The catalog ships with 30 pre-seeded OTC items:
 
-### 7. Internationalisation
-UI supports multiple languages; NLP service understands Hinglish phrases (e.g., "bukhar", "sir dard") in addition to English.
+| Category | Items |
+|----------|-------|
+| Analgesic | Paracetamol 500mg, Ibuprofen 200mg, Aspirin 75mg, Diclofenac Gel 30g |
+| Antihistamine | Cetirizine 10mg, Loratadine 10mg, Levocetirizine 5mg |
+| Antacid | Antacid Gel 200ml, Pantoprazole 40mg, Ranitidine 150mg |
+| Cough & cold | Cough Syrup 100ml, Strepsils Lozenges, Honey-Ginger Cough Drops |
+| Topical | Vicks VapoRub 50g, Hydrocortisone Cream 1%, Calamine Lotion 100ml |
+| Anti-emetic / diarrheal | Loperamide 2mg, Domperidone 10mg |
+| Vitamin | Vitamin C 500mg, Multivitamin, Vitamin D3 60000IU, Calcium 500mg, Iron + Folic Acid, Zinc 50mg |
+| First aid | Adhesive Bandage, Povidone Iodine 100ml, Gauze Pad, Crepe Bandage 6cm |
+| Other | ORS Sachet, Glucose Powder 100g |
 
----
+A live search bar above the grid filters across name, generic name, category, and indications (e.g. typing "headache" surfaces Paracetamol, Ibuprofen, and Aspirin). The cart isn't cleared by search — selected items stay in the cart even when filtered out of view. Catalog eligibility is enforced per-Medicine-document by the `dispensableByMachine` boolean.
 
-## Technology Stack
+### 3. Doctor-referral handoff
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 18, Vite, Tailwind CSS, Recharts, Three.js / Vanta backgrounds |
-| Backend | Node.js 20, Express, MongoDB / Mongoose, JWT auth |
-| Security | Helmet, express-rate-limit, bcryptjs, CORS |
-| AI Services | Python 3.11, FastAPI, uvicorn (×10 microservices) |
-| ML Libraries | scikit-learn, statsmodels, PyTorch (CPU), rapidfuzz |
-| Database | MongoDB 7 (bundled Docker container) |
-| Orchestration | Docker, Docker Compose |
+When the kiosk decides `CONSULT_DOCTOR`:
+
+- Kiosk result page shows the campus health centre name, address, hours, and intercom numbers.
+- A **"Show to nurse"** button opens a full-screen view designed to be readable across a desk.
+- A **"Share on WhatsApp"** button opens `wa.me` with a pre-filled summary.
+- An amber banner appears on the student's dashboard listing all unacknowledged referrals with **View** and **Mark resolved** buttons. The banner disappears once everything is acknowledged.
+
+Acknowledgement is ownership-guarded (`POST /api/machine/session/:id/acknowledge-referral`); admins cannot acknowledge other users' referrals.
+
+### 4. Real-time outbreak alerts
+
+A public endpoint (`GET /api/health/outbreak-alerts`) aggregates kiosk-diagnosed disease counts for the last 7 days vs. the prior 7. A 5-minute in-memory cache keeps it cheap. The Welcome page shows a dismissible banner per outbreak when:
+
+- ≥ 5 cases in the last 7 days, **and**
+- ≥ 2× the prior week's count
+
+Dismissals are stored in `sessionStorage` so the banner reappears next browser session if the outbreak persists.
+
+### 5. Inventory management
+
+Real-time stock tracking, low-stock alerts on the admin dashboard, expiry tracking with `isExpired` and `isExpiringSoon` virtuals, and full CRUD on category, manufacturer, batch number, expiry date, price, OTC flag, machine-dispensable flag, and per-session max quantity. The boot-time OTC seeder is idempotent — re-running it inserts only new items.
+
+### 6. Admin user management
+
+Searchable + filterable table of all users with role badges, active/disabled toggle, joined date, and pagination. Admins can:
+
+- Create users with any role (including other admins)
+- Edit name, phone, department, studentId, dateOfBirth, chronicConditions, role, active flag, and password
+- Delete users
+
+Safety guards in `adminUser.service.js`:
+
+- Cannot change own role
+- Cannot disable or delete own account
+- Cannot demote / disable / delete the **last active admin**
+
+### 7. Password reset
+
+`PasswordResetToken` model with a TTL index that auto-expires entries. Tokens are 32-byte random; only the SHA-256 hash is stored (replay-safe). The flow:
+
+1. `POST /api/auth/forgot-password` → invalidates prior tokens, mints a new one, emails the link via Resend.
+2. User clicks link → `/reset-password/:token` page → `POST /api/auth/reset-password`.
+3. Token is single-use; replay returns "invalid or expired" with no email-existence leak.
+
+If `RESEND_API_KEY` is unset, the reset link is logged to the container console instead of emailed — useful for development and demos.
+
+### 8. Internationalisation
+
+UI strings live in `client/src/i18n/index.js` for English, Hindi, and Tamil. The NLP service also accepts Hinglish phrases (`bukhar`, `sir dard`, `pet me dard`) using a fuzzy-match symptom dictionary.
 
 ---
 
@@ -64,7 +115,7 @@ UI supports multiple languages; NLP service understands Hinglish phrases (e.g., 
 
 The system runs **10 FastAPI microservices** split into two groups.
 
-### Kiosk Pipeline (real-time, target < 5 s end-to-end)
+### Kiosk pipeline (real-time, target < 5 s end-to-end)
 
 ```
 User input (text / vitals / image)
@@ -72,7 +123,7 @@ User input (text / vitals / image)
         ▼
   [Orchestrator :8100]
         │
-        ├──► [NLP Service :8106]          — text → canonical symptoms (negation-aware)
+        ├──► [NLP Service :8106]          — text → canonical symptoms (negation-aware, multilingual)
         │
         ├──► [Disease Prediction :8101]   — symptoms + vitals → top-K diseases (RF + GBM ensemble)
         ├──► [Risk Classification :8102]  — vitals + symptoms → LOW / MEDIUM / HIGH (LR + rules)
@@ -82,103 +133,158 @@ User input (text / vitals / image)
         └──► [Medicine Recommender :8103] — rule-based OTC matching (auditable, not ML-driven)
                 │
                 ▼
-        Decision Engine → DISPENSE | REFER_TO_DOCTOR
+        Decision Engine → DISPENSE | CONSULT_DOCTOR
 ```
 
-### Analytics Pipeline (on-demand, admin only)
+The orchestrator is fault-tolerant: if any individual service returns 5xx or times out, the pipeline degrades gracefully (e.g. missing image analysis just means no skin-condition flags; the disease ensemble still runs). The final decision engine widens the safety bar (referral) when fewer signals are available.
+
+### Analytics pipeline (on-demand, admin only)
 
 | Service | Port | Algorithm | Input | Output |
 |---------|------|-----------|-------|--------|
 | Risk Profiling | 8001 | Random Forest (160 estimators) | 6 patient features | Low / Medium / High + probability |
 | Disease Trend | 8002 | Rolling moving avg + Z-score | Daily diagnosis counts | Trend line + anomaly dates |
-| Forecasting | 8003 | SARIMA / Exp. Smoothing | Daily medicine demand history | 14–90 day forecast + reorder flag |
+| Forecasting | 8003 | SARIMA / Exponential Smoothing | Daily medicine demand history | 14–90 day forecast + reorder flag |
+
+In the single-container HF Spaces image, all three analytics services run behind an internal nginx that path-routes `/predict`, `/analyze`, and `/forecast` to the correct port, so the Express server only needs one URL for all three.
 
 ---
 
 ## Backend API Routes
 
-| Prefix | Purpose |
-|--------|---------|
-| `GET /api/health` | Health check (also pings all 4 AI services) |
+| Method + Path | Purpose |
+|---------------|---------|
+| `GET /api/health` | App + AI health check (15 s in-memory cache) |
+| `GET /api/health/ai` | Public AI services status (used by Welcome page) |
+| `GET /api/health/outbreak-alerts` | Public anonymous outbreak counts (5 min cache) |
+| `POST /api/auth/register` | Student / staff signup (admin blocked) |
 | `POST /api/auth/login` | JWT login |
-| `GET/POST /api/medicines` | Inventory CRUD |
-| `GET/POST /api/records` | Medical record CRUD |
+| `GET /api/auth/me` | Current user profile |
+| `PATCH /api/auth/me` | Self profile edit (whitelisted fields) |
+| `POST /api/auth/forgot-password` | Email a reset token |
+| `POST /api/auth/reset-password` | Consume reset token |
+| `GET / POST / PATCH / DELETE /api/medicines/...` | Inventory CRUD |
+| `GET / POST /api/records/...` | Legacy medical record CRUD |
+| `POST /api/machine/session/start` | Start kiosk symptom session |
+| `POST /api/machine/session/:id/submit` | Submit symptoms + vitals + image |
+| `POST /api/machine/session/:id/acknowledge-referral` | Mark referral as seen |
+| `POST /api/machine/quick/session/start` | Start Quick Pickup session |
+| `POST /api/machine/quick/session/:id/cart` | Set cart contents |
+| `GET /api/machine/quick/catalog` | OTC catalog (dispensable + active) |
+| `GET /api/machine/sessions` | List own sessions (paginated) |
 | `GET /api/analytics/risk/:studentId` | ML risk profile for one student |
 | `GET /api/analytics/trend` | Disease trend time-series |
 | `GET /api/analytics/forecast/:medicineId` | Demand forecast |
 | `GET /api/analytics/distribution` | Risk distribution across all students |
-| `POST /api/machine/session` | Start a kiosk session |
-| `POST /api/machine/quick/pickup` | Quick pickup via QR |
-| `POST /api/sensor/reading` | Submit sensor vitals |
-| `GET/PUT /api/system/config` | Admin system settings |
+| `POST /api/sensor/reading` | Submit sensor vitals reading |
+| `GET / POST / PATCH / DELETE /api/admin/users/...` | Admin user CRUD |
+| `GET / PUT /api/system/config` | Admin system settings |
+
+Authentication: `Authorization: Bearer <JWT>` for everything except the explicitly public health endpoints. Rate limits via `express-rate-limit`; CORS configured against `CLIENT_URL`.
 
 ---
 
 ## Data Models (MongoDB)
 
-| Collection | Key Fields |
-|-----------|-----------|
-| `users` | role, studentId, profile, medicalHistory |
-| `medicines` | name, stock, category, isOTC, unit |
-| `medicalrecords` | student, staff, symptoms, diagnosis, medicinesIssued, date |
-| `machinesessions` | studentId, input, aiResponse, decision, dispensed |
-| `quickpickups` | qrCode, medicine, studentId, dispensedAt |
-| `sensorreadings` | studentId, temperature, heartRate, spO2, respirationRate, timestamp |
+| Collection | Key fields |
+|------------|------------|
+| `users` | name, email, password (bcrypt × 12), role (`student` / `staff` / `admin`), studentId, department, phone, dateOfBirth, chronicConditions, isActive |
+| `medicines` | name, genericName, category (10 categories), manufacturer, batchNumber, quantity, unit, pricePerUnit, expiryDate, minStockLevel, otcSafe, dispensableByMachine, maxPerSession, indications, contraindications |
+| `machinesessions` | user, sessionId, type (`kiosk` / `quick`), status, symptoms, vitals, aiResponse, decision (action + reasons + acknowledgedAt), cart, completedAt |
+| `medicalrecords` | student, staff, symptoms, diagnosis, medicinesIssued, visitDate |
+| `sensorreadings` | user, temperature, heartRate, spO2, respirationRate, timestamp |
+| `passwordresettokens` | userId, tokenHash, expiresAt (TTL-indexed), usedAt |
 | `systemconfigs` | minConfidence, maxDispenseQuantity, maintenanceMode |
+
+Each Medicine document has virtuals for `isLowStock`, `isExpired`, and `isExpiringSoon` so the client never has to compute these.
 
 ---
 
-## Production Architecture (single VM + Docker Compose)
+## Deployment
 
-```
-Browser
-   │
-   ▼
-[ app ]            Node.js 20 — serves the React SPA + REST API on port 5050
-   │
-   ├── [ mongo ]          MongoDB 7 — bundled container, data in a Docker volume
-   │
-   ├── [ analytics-ai ]   Risk / trend / forecast services behind nginx
-   │
-   └── [ kiosk-ai ]       Real-time kiosk pipeline (orchestrator + sub-services)
-```
+### 1. Hugging Face Spaces (single container, free tier)
 
-All four services are defined in `docker-compose.yml` and start with a single
-`docker compose up -d`. They communicate over the internal Compose network;
-only the app's port 5050 is published to the host. A reverse proxy in front of
-the app adds HTTPS.
+The root `Dockerfile` builds a single image containing:
+
+- The React production bundle (Vite build, stage 1)
+- The Express API (stage 2, Node 20 on Debian)
+- All 10 Python AI microservices (Python 3.11)
+- An internal nginx for analytics path-routing
+- A `start.sh` that boots every AI service on a loopback port, then runs Express in the foreground on port 7860 (HF's default)
+
+The Space is created with **SDK: Docker** (Blank template), Public, CPU Basic Free hardware. HF Spaces' Docker SDK auto-reads `./Dockerfile` at repo root — there is no config option to point at a different path.
+
+Build time on first push: ~5–8 min (PyTorch CPU wheel download dominates). Subsequent builds are ~3–5 min thanks to Docker layer caching.
+
+Required secrets in Space settings (see README for the full list).
+
+### 2. VM with Docker Compose
+
+`docker-compose.yml` declares four services:
+
+| Service | Image source | Purpose |
+|---------|--------------|---------|
+| `mongo` | `mongo:7` | Bundled MongoDB with a `mongo_data` Docker volume |
+| `analytics-ai` | `docker/analytics.Dockerfile` | Risk, trend, forecast services behind nginx |
+| `kiosk-ai` | `docker/kiosk.Dockerfile` | Orchestrator + 6 kiosk sub-services |
+| `app` | `docker/app.Dockerfile` | Express API + React build, port 5050 |
+
+Compose secrets read from a root `.env` via `${VAR:?}` interpolation, so the stack fails fast if any required value is missing. Mongo's port is **not** published — only the app reaches it on the internal network. Front the app with a reverse proxy for HTTPS.
+
+### 3. Local development (no Docker)
+
+`start.sh` boots all AI services, Express, and the Vite dev server in parallel. Prerequisites: Node 20, Python 3.11, and a local MongoDB.
 
 ---
 
 ## Environment Variables
 
-For a Docker Compose deploy, only the values below go in a root `.env` file
-(`cp .env.example .env`). `MONGO_URI`, `NODE_ENV`, `PORT`, and the AI service
-URLs are wired automatically in `docker-compose.yml`.
+| Variable | Required | Used by | Description |
+|----------|----------|---------|-------------|
+| `MONGO_URI` | Yes | Express | Mongo connection string. **Name is `MONGO_URI`, not `MONGODB_URI`** — wrong name = `FATAL: missing required env vars`. |
+| `JWT_SECRET` | Yes | Express | Random secret for signing tokens. Generate with `openssl rand -base64 48`. |
+| `JWT_EXPIRES_IN` | No | Express | Token lifetime (default `7d`). For kiosk-shared environments, set lower (`15m` is a sane minimum). |
+| `CLIENT_URL` | Yes | Express | Public origin of the app — used for CORS. |
+| `APP_URL` | Yes | Express | Public origin for password-reset links (usually same as `CLIENT_URL`). |
+| `RESEND_API_KEY` | No | Express | Resend API key for reset emails. If unset, reset links are logged to the container console. |
+| `EMAIL_FROM` | No | Express | Sender for reset emails. Defaults to `onboarding@resend.dev`. |
+| `AI_ORCHESTRATOR_URL` | No | Express | Override the kiosk pipeline URL. Defaults to `http://kiosk-ai:8100` (compose) or `http://127.0.0.1:8100` (HF). |
+| `AI_RISK_URL` / `AI_TREND_URL` / `AI_FORECAST_URL` | No | Express | Analytics URLs. All three point to the same nginx in the HF image. |
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `JWT_SECRET` | Yes | Random secret for signing tokens (`openssl rand -base64 48`) |
-| `JWT_EXPIRES_IN` | No | Token lifetime (default `7d`) |
-| `CLIENT_URL` | Yes | Public origin of the app — used for CORS |
-| `APP_URL` | Yes | Public origin for password-reset links (usually same as `CLIENT_URL`) |
-| `RESEND_API_KEY` | No | Resend API key for reset emails; blank logs links to the console |
-| `EMAIL_FROM` | No | Sender address for password-reset emails |
+For docker-compose, `MONGO_URI`, `NODE_ENV`, `PORT`, and AI URLs are wired automatically by `docker-compose.yml`. The root `.env` only needs `JWT_SECRET`, `CLIENT_URL`, `APP_URL`, and (optionally) the Resend keys.
 
 ---
 
-## Local Development
+## Security Notes
 
-```bash
-# Prerequisites: Node 20, Python 3.11, MongoDB running
+- Passwords hashed with bcrypt cost 12; never returned by `User.toJSON`.
+- Auth tokens signed with HS256; secret length minimum enforced.
+- Password reset tokens are single-use, SHA-256 hashed at rest, and TTL-expire.
+- The "forgot password" endpoint returns the same response whether the email exists or not (no email-enumeration leak).
+- Mongo's port is not exposed in either deploy path; only the Node container reaches it.
+- HF Spaces secrets are injected as environment variables, never written to disk.
+- The `0.0.0.0/0` Atlas allowlist is intentional for HF Spaces (no fixed egress IPs) — for VM deploys, restrict to the VM's IP.
 
-chmod +x start.sh && ./start.sh
-# → App at http://localhost:5050
-```
+---
 
-## Docker (local full-stack)
+## Free-tier Constraints to Be Aware Of
 
-```bash
-docker compose up --build
-# → App at http://localhost:5050
-```
+| Resource | Limit | Notes |
+|----------|-------|-------|
+| MongoDB Atlas M0 | 512 MB storage | A demo run uses < 10 MB; 25 000+ kiosk sessions fit before hitting the cap. |
+| MongoDB Atlas M0 idle | 60 days no connections | Cluster auto-pauses; one-click resume in Atlas UI, no data loss. |
+| HF Spaces free | 16 GB RAM, 2 vCPU shared | All 10 AI services use ~3–4 GB at peak. |
+| HF Spaces sleep | After ~48 h idle | First request takes ~30 s to wake; no data loss. |
+| Resend free | 3 000 emails / month | Plenty for password resets on a campus scale. |
+
+---
+
+## Quick Reference
+
+| Action | Command |
+|--------|---------|
+| Local dev | `chmod +x start.sh && ./start.sh` |
+| Local Docker | `cp .env.example .env && docker compose up --build` |
+| Seed an admin against any running DB | `MONGO_URI="..." JWT_SECRET="..." node server/src/utils/seedAdmin.js admin@example.com Password123 "Display Name"` |
+| Force re-seed OTC catalog | Restart the server (seed runs on boot, idempotent on `genericName + name`) |
+| Run tests | (project does not currently ship a test suite) |
