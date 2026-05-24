@@ -14,10 +14,10 @@ import { apiFetch, getToken } from '../lib/api.js';
 const STAGES = ['heart', 'temperature', 'spO2', 'respiration'];
 const CAPTURE_MS = 5000;
 
-// Photo-based screening (camera → image-analysis model) is disabled on this
-// deployment — the PyTorch image service is too heavy for the free-tier VM.
-// Vitals capture is unaffected. Flip to true if running on capable hardware.
-const IMAGE_SCREENING_ENABLED = false;
+// Photo-based screening (camera → image-analysis MobileNetV2 model) is
+// enabled on deployments with enough RAM for PyTorch (~1 GB resident).
+// Flip to false when deploying to a memory-constrained host.
+const IMAGE_SCREENING_ENABLED = true;
 
 const normalRange = {
   heartRate: [55, 100],
