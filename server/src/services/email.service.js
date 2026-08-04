@@ -152,6 +152,18 @@ export const verifyEmailTransport = async () => {
       logger.info(
         `Email service: Brevo verified (account: ${acct?.email || 'unknown'}), sending as ${config.email.from}`
       );
+
+      // A valid key still delivers nothing if the From address isn't a
+      // verified sender on the account. The Resend placeholder never is.
+      if (/resend\.dev/i.test(config.email.from)) {
+        logger.error(
+          `Email service: EMAIL_FROM is still the placeholder ${config.email.from}. ` +
+            'Brevo only sends from a verified sender — set EMAIL_FROM to an address ' +
+            'verified under Senders & domains, or no mail will arrive.'
+        );
+        return { ok: false, mode };
+      }
+
       return { ok: true, mode };
     } catch (err) {
       logger.error(`Email service: Brevo verification failed (${err.message})`);

@@ -58,6 +58,12 @@ export const requestPasswordReset = async ({ email }) => {
         logger.warn(
           `[password-reset] Delivery failed (mode=${result.mode}) for ${user.email}. Link: ${resetUrl}`
         );
+      } else {
+        // Logged so an operator can tell "provider accepted it" apart from
+        // "nothing was ever attempted" — silence otherwise looks identical.
+        logger.info(
+          `[password-reset] Email accepted by provider (mode=${result.mode}, id=${result.id || 'n/a'}) for ${user.email}`
+        );
       }
     })
     .catch((err) => {
