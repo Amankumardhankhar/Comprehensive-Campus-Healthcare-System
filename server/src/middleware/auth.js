@@ -10,8 +10,14 @@ export const protect = asyncHandler(async (req, _res, next) => {
   if (!token) throw ApiError.unauthorized('Access token required');
 
   const decoded = verifyAccessToken(token);
-  const user = await User.findById(decoded.sub);
+  const user = await User.findById(decoded.sub).select('+passwordChangedAt');
   if (!user || !user.isActive) throw ApiError.unauthorized('User no longer exists or is inactive');
+
+  // A password reset must end every session that predates it — otherwise a
+  // reset prompted by a compromise leaves the attacker's token valid.
+  if (user.passwordChangedAt && decoded.iat * 1000 < user.passwordChangedAt.getTime()) {
+    throw ApiError.unauthorized('Password was changed. Please sign in again.');
+  }
 
   req.user = user;
   next();

@@ -3,7 +3,7 @@ import { User } from '../models/User.js';
 import { PasswordResetToken } from '../models/PasswordResetToken.js';
 import { ApiError } from '../utils/ApiError.js';
 import { config } from '../config/index.js';
-import { sendEmail, renderPasswordResetEmail } from './email.service.js';
+import { sendEmail, renderPasswordResetEmail, renderPasswordChangedEmail } from './email.service.js';
 import { logger } from '../utils/logger.js';
 
 const TOKEN_TTL_MINUTES = 60;
@@ -41,18 +41,50 @@ export const requestPasswordReset = async ({ email }) => {
     expiresInMinutes: TOKEN_TTL_MINUTES,
   });
 
-  const result = await sendEmail({
+  // Deliberately not awaited. Awaiting the provider call makes the response
+  // measurably slower for real accounts than for non-existent ones, which
+  // undoes the generic message above as an anti-enumeration defence.
+  sendEmail({
     to: user.email,
     subject: 'Reset your Campus Healthcare password',
     html,
     text,
-  });
-
-  if (!result.delivered && result.mode === 'console') {
-    logger.info(`[password-reset] Link for ${user.email}: ${resetUrl}`);
-  }
+  })
+    .then((result) => {
+      // The raw token exists only in this closure — Mongo holds just its
+      // hash. If delivery failed, logging the link here is the only way an
+      // operator can still rescue the user.
+      if (!result.delivered) {
+        logger.warn(
+          `[password-reset] Delivery failed (mode=${result.mode}) for ${user.email}. Link: ${resetUrl}`
+        );
+      }
+    })
+    .catch((err) => {
+      logger.error(`[password-reset] Send threw for ${user.email}: ${err.message}. Link: ${resetUrl}`);
+    });
 
   return { ok: true };
+};
+
+/** Masks an address for display: "student@campus.edu" → "s••••••@campus.edu" */
+const maskEmail = (email) => {
+  const [local, domain] = email.split('@');
+  if (!domain) return '•••';
+  const head = local.slice(0, 1);
+  return `${head}${'•'.repeat(Math.max(local.length - 1, 1))}@${domain}`;
+};
+
+export const verifyResetToken = async (token) => {
+  if (!token) return { valid: false };
+
+  const record = await PasswordResetToken.findOne({ tokenHash: hashToken(token) });
+  if (!record || record.usedAt || record.expiresAt < new Date()) return { valid: false };
+
+  const user = await User.findById(record.userId);
+  if (!user || !user.isActive) return { valid: false };
+
+  return { valid: true, maskedEmail: maskEmail(user.email), expiresAt: record.expiresAt };
 };
 
 export const completePasswordReset = async ({ token, newPassword }) => {
@@ -69,6 +101,11 @@ export const completePasswordReset = async ({ token, newPassword }) => {
   const user = await User.findById(record.userId).select('+password');
   if (!user || !user.isActive) throw ApiError.badRequest('Reset link is invalid or has expired');
 
+  const sameAsCurrent = await user.comparePassword(newPassword);
+  if (sameAsCurrent) {
+    throw ApiError.badRequest('New password must be different from your current password');
+  }
+
   user.password = newPassword;
   await user.save();
 
@@ -80,6 +117,15 @@ export const completePasswordReset = async ({ token, newPassword }) => {
     { userId: user._id, usedAt: null },
     { $set: { usedAt: new Date() } }
   );
+
+  // Notification only — a failure here must not fail the reset itself.
+  const changed = renderPasswordChangedEmail({ name: user.name, changedAt: new Date() });
+  sendEmail({
+    to: user.email,
+    subject: 'Your Campus Healthcare password was changed',
+    html: changed.html,
+    text: changed.text,
+  }).catch((err) => logger.error(`[password-reset] Confirmation email failed: ${err.message}`));
 
   return { ok: true };
 };

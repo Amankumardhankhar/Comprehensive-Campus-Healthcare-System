@@ -4,6 +4,7 @@ import { connectDB, disconnectDB } from './config/db.js';
 import { logger } from './utils/logger.js';
 import { seedOtcMedicines } from './utils/seedOtcMedicines.js';
 import { SystemConfig } from './models/SystemConfig.js';
+import { verifyEmailTransport } from './services/email.service.js';
 
 const start = async () => {
   await connectDB();
@@ -15,6 +16,10 @@ const start = async () => {
   } catch (e) {
     logger.error('Boot seed failed', e);
   }
+
+  // Surfaces bad SMTP credentials at boot rather than on a user's first
+  // password reset. Never fatal — the app must still serve without email.
+  verifyEmailTransport().catch(() => {});
 
   const server = app.listen(config.port, () => {
     logger.info(`Server running in ${config.env} mode on port ${config.port}`);

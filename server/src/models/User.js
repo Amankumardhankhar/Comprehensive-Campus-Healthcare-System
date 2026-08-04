@@ -59,6 +59,10 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    passwordChangedAt: {
+      type: Date,
+      select: false,
+    },
   },
   { timestamps: true }
 );
@@ -69,6 +73,13 @@ userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
   const salt = await bcrypt.genSalt(12);
   this.password = await bcrypt.hash(this.password, salt);
+
+  // Stamped on changes only, never on signup, so existing sessions are cut
+  // off when a password is reset. Backdated one second because JWT `iat` has
+  // whole-second resolution — without it a token issued in the same second
+  // as the change would read as older than it and be rejected.
+  if (!this.isNew) this.passwordChangedAt = new Date(Date.now() - 1000);
+
   next();
 });
 

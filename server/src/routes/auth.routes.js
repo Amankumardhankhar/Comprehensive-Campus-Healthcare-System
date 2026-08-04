@@ -1,8 +1,17 @@
 import { Router } from 'express';
-import { body } from 'express-validator';
-import { register, login, me, updateMe, forgotPassword, resetPassword } from '../controllers/auth.controller.js';
+import { body, param } from 'express-validator';
+import {
+  register,
+  login,
+  me,
+  updateMe,
+  forgotPassword,
+  resetPassword,
+  verifyResetToken,
+} from '../controllers/auth.controller.js';
 import { validate } from '../middleware/validate.js';
 import { protect } from '../middleware/auth.js';
+import { resetRequestByIp, resetRequestByEmail } from '../middleware/rateLimiters.js';
 import { ROLES } from '../models/User.js';
 
 const router = Router();
@@ -39,13 +48,26 @@ router.get('/me', protect, me);
 
 router.post(
   '/forgot-password',
+  resetRequestByIp,
   [body('email').isEmail().normalizeEmail().withMessage('Valid email required')],
   validate,
+  // After validate, so the key is the normalised address and malformed
+  // floods are absorbed by the IP limiter instead of polluting this bucket.
+  resetRequestByEmail,
   forgotPassword
+);
+
+router.get(
+  '/reset-password/:token/verify',
+  resetRequestByIp,
+  [param('token').isString().isLength({ min: 32, max: 128 }).withMessage('Invalid reset token')],
+  validate,
+  verifyResetToken
 );
 
 router.post(
   '/reset-password',
+  resetRequestByIp,
   [
     body('token').isString().isLength({ min: 32, max: 128 }).withMessage('Invalid reset token'),
     body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),

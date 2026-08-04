@@ -15,6 +15,11 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+// One proxy hop (the Hugging Face edge, or nginx on a VM deploy). Without
+// this every request appears to come from the proxy's address, which would
+// make per-IP rate limiting apply to the whole deployment at once.
+app.set('trust proxy', 1);
+
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(
   cors({

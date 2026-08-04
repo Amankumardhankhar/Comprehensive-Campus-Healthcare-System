@@ -30,6 +30,11 @@ export const forgotPassword = asyncHandler(async (req, res) => {
   });
 });
 
+export const verifyResetToken = asyncHandler(async (req, res) => {
+  const result = await resetService.verifyResetToken(req.params.token);
+  res.json({ success: true, data: result });
+});
+
 export const resetPassword = asyncHandler(async (req, res) => {
   await resetService.completePasswordReset({
     token: req.body.token,

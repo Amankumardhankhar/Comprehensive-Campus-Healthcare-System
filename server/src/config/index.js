@@ -15,6 +15,15 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
+const smtpUser = process.env.SMTP_USER || '';
+const smtpPass = process.env.SMTP_PASS || '';
+
+// Gmail rewrites any From header that doesn't match the authenticated
+// account, so derive it from SMTP_USER rather than let it be set wrong.
+const defaultFrom = smtpUser
+  ? `Campus Healthcare <${smtpUser}>`
+  : 'Campus Healthcare <onboarding@resend.dev>';
+
 export const config = {
   env: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT) || 5000,
@@ -27,7 +36,13 @@ export const config = {
   appUrl: process.env.APP_URL || process.env.CLIENT_URL || 'http://localhost:5050',
   email: {
     resendApiKey: process.env.RESEND_API_KEY || '',
-    from: process.env.EMAIL_FROM || 'Campus Healthcare <onboarding@resend.dev>',
+    smtp: {
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: Number(process.env.SMTP_PORT) || 587,
+      user: smtpUser,
+      pass: smtpPass,
+    },
+    from: process.env.EMAIL_FROM || defaultFrom,
   },
   ai: {
     riskUrl: process.env.AI_RISK_URL || 'http://localhost:8001',

@@ -101,9 +101,20 @@ Required HF Space secrets (Settings → Variables and secrets):
 | `JWT_SECRET` | `openssl rand -base64 48` |
 | `JWT_EXPIRES_IN` | e.g. `7d` (or shorter for kiosk-shared environments) |
 | `CLIENT_URL` | `https://<owner>-<space>.hf.space` |
-| `APP_URL` | Same as `CLIENT_URL` |
-| `RESEND_API_KEY` | *(optional)* enables real reset emails |
-| `EMAIL_FROM` | *(optional)* sender for reset emails |
+| `APP_URL` | Same as `CLIENT_URL` — password-reset links are built from it, so a wrong value makes every emailed link dead |
+| `SMTP_USER` | *(optional)* Gmail address that sends reset emails |
+| `SMTP_PASS` | *(optional)* Gmail **App Password** (16 chars), not the account password |
+| `RESEND_API_KEY` | *(optional)* alternative to SMTP |
+| `EMAIL_FROM` | *(optional)* defaults to `Campus Healthcare <SMTP_USER>` |
+
+Email transport is chosen at boot in the order **SMTP → Resend → console**. With none
+configured the app still runs; reset links are written to the Space logs instead of sent.
+A failed send always logs the link too, so a locked-out user can be rescued manually.
+
+Gmail App Passwords require 2-Step Verification on the account
+(Google Account → Security → App passwords). Free Gmail sends ~500/day. Resend's
+shared `onboarding@resend.dev` sender only delivers to your own Resend account
+address — reaching anyone else needs a verified domain.
 
 The free tier sleeps after ~48 h of inactivity; the first request after sleep takes ~30 s to wake.
 

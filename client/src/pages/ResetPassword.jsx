@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import MedicalBackground from '../components/MedicalBackground.jsx';
@@ -19,6 +19,31 @@ export default function ResetPassword() {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
+
+  // Checked before rendering the form — otherwise the user picks and confirms
+  // a password only to be told the link expired.
+  const [checking, setChecking] = useState(true);
+  const [tokenValid, setTokenValid] = useState(false);
+  const [maskedEmail, setMaskedEmail] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch(`/api/auth/reset-password/${token}/verify`);
+        if (cancelled) return;
+        setTokenValid(Boolean(res?.data?.valid));
+        setMaskedEmail(res?.data?.maskedEmail || '');
+      } catch {
+        if (!cancelled) setTokenValid(false);
+      } finally {
+        if (!cancelled) setChecking(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -79,7 +104,31 @@ export default function ResetPassword() {
               </div>
             </div>
 
-            {done ? (
+            {checking ? (
+              <div className="flex flex-col items-center gap-3 py-8">
+                <svg className="h-8 w-8 animate-spin text-brand-500" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z" />
+                </svg>
+                <p className={`text-sm ${subText}`}>{t('resetPassword.checking')}</p>
+              </div>
+            ) : !tokenValid ? (
+              <div className="space-y-4">
+                <div className={`rounded-xl px-4 py-4 ring-1 ${
+                  isDark ? 'bg-amber-500/10 text-amber-200 ring-amber-400/30' : 'bg-amber-50 text-amber-800 ring-amber-200'
+                }`}>
+                  <div className="font-semibold">{t('resetPassword.invalidTitle')}</div>
+                  <p className="text-sm mt-1 opacity-90">{t('resetPassword.invalidBody')}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate('/forgot-password')}
+                  className="w-full py-3 rounded-xl bg-gradient-to-r from-brand-500 to-brand-700 text-white font-semibold shadow-lg shadow-brand-500/40 hover:opacity-90 transition-opacity"
+                >
+                  {t('resetPassword.requestNew')}
+                </button>
+              </div>
+            ) : done ? (
               <div className="space-y-4">
                 <div className={`rounded-xl px-4 py-4 ring-1 ${
                   isDark ? 'bg-emerald-500/10 text-emerald-200 ring-emerald-400/30' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'
@@ -90,6 +139,14 @@ export default function ResetPassword() {
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-5">
+                {maskedEmail && (
+                  <div className={`rounded-xl px-4 py-3 text-sm ring-1 ${
+                    isDark ? 'bg-white/5 text-slate-200 ring-white/10' : 'bg-slate-50 text-slate-600 ring-slate-200'
+                  }`}>
+                    {t('resetPassword.forAccount', { email: maskedEmail })}
+                  </div>
+                )}
+
                 <div>
                   <label className={`block text-xs font-semibold mb-1.5 ${subText}`}>{t('resetPassword.newPasswordLabel')}</label>
                   <div className="relative">
