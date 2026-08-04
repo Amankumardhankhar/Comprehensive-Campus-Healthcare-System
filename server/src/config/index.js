@@ -35,6 +35,7 @@ export const config = {
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
   appUrl: process.env.APP_URL || process.env.CLIENT_URL || 'http://localhost:5050',
   email: {
+    brevoApiKey: process.env.BREVO_API_KEY || '',
     resendApiKey: process.env.RESEND_API_KEY || '',
     smtp: {
       host: process.env.SMTP_HOST || 'smtp.gmail.com',

@@ -12,7 +12,16 @@ let mode = 'console';
 let smtpTransport = null;
 let resend = null;
 
-if (config.email.smtp.user && config.email.smtp.pass) {
+/** Splits `Name <addr@host>` into Brevo's sender object shape. */
+const parseFrom = (from) => {
+  const m = /^\s*(.*?)\s*<([^>]+)>\s*$/.exec(from);
+  return m ? { name: m[1] || undefined, email: m[2] } : { email: from.trim() };
+};
+
+if (config.email.brevoApiKey) {
+  mode = 'brevo';
+  logger.info('Email service: Brevo HTTP API configured');
+} else if (config.email.smtp.user && config.email.smtp.pass) {
   mode = 'smtp';
 
   // Container platforms (Hugging Face Spaces among them) routinely have no
@@ -47,6 +56,45 @@ if (config.email.smtp.user && config.email.smtp.pass) {
 
 export const emailMode = () => mode;
 
+/**
+ * Brevo's REST API over HTTPS. Chosen because container platforms commonly
+ * block outbound SMTP (Hugging Face blocks both 587 and 465) while leaving
+ * port 443 open — the same path the app already uses for MongoDB Atlas.
+ * Uses global fetch, so no extra dependency.
+ */
+const sendViaBrevo = async ({ to, subject, html, text }) => {
+  try {
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'api-key': config.email.brevoApiKey,
+        'content-type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify({
+        sender: parseFrom(config.email.from),
+        to: [{ email: to }],
+        subject,
+        htmlContent: html,
+        textContent: text,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      logger.error(`Brevo send failed (HTTP ${res.status}): ${body.slice(0, 300)}`);
+      return { delivered: false, mode, error: `HTTP ${res.status}` };
+    }
+
+    const data = await res.json().catch(() => ({}));
+    return { delivered: true, mode, id: data?.messageId };
+  } catch (err) {
+    logger.error(`Brevo exception: ${err.message}`);
+    return { delivered: false, mode, error: err.message };
+  }
+};
+
 const sendViaSmtp = async ({ to, subject, html, text }) => {
   try {
     const info = await smtpTransport.sendMail({ from: config.email.from, to, subject, html, text });
@@ -78,6 +126,7 @@ const sendViaResend = async ({ to, subject, html, text }) => {
 };
 
 export const sendEmail = async ({ to, subject, html, text }) => {
+  if (mode === 'brevo') return sendViaBrevo({ to, subject, html, text });
   if (mode === 'smtp') return sendViaSmtp({ to, subject, html, text });
   if (mode === 'resend') return sendViaResend({ to, subject, html, text });
 
@@ -87,6 +136,29 @@ export const sendEmail = async ({ to, subject, html, text }) => {
 
 /** Verifies the configured transport can actually authenticate. Called at boot. */
 export const verifyEmailTransport = async () => {
+  if (mode === 'brevo') {
+    try {
+      const res = await fetch('https://api.brevo.com/v3/account', {
+        headers: { 'api-key': config.email.brevoApiKey, accept: 'application/json' },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) {
+        logger.error(
+          `Email service: Brevo key rejected (HTTP ${res.status}). Reset emails will not be delivered.`
+        );
+        return { ok: false, mode };
+      }
+      const acct = await res.json().catch(() => ({}));
+      logger.info(
+        `Email service: Brevo verified (account: ${acct?.email || 'unknown'}), sending as ${config.email.from}`
+      );
+      return { ok: true, mode };
+    } catch (err) {
+      logger.error(`Email service: Brevo verification failed (${err.message})`);
+      return { ok: false, mode };
+    }
+  }
+
   if (mode !== 'smtp') return { ok: mode === 'resend', mode };
   try {
     await smtpTransport.verify();
