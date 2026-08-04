@@ -1,3 +1,4 @@
+import dns from 'node:dns';
 import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
 import { config } from '../config/index.js';
@@ -13,13 +14,27 @@ let resend = null;
 
 if (config.email.smtp.user && config.email.smtp.pass) {
   mode = 'smtp';
+
+  // Container platforms (Hugging Face Spaces among them) routinely have no
+  // IPv6 route, while smtp.gmail.com resolves to IPv6 first. Every attempt
+  // then dies with ENETUNREACH before reaching Gmail at all. Preferring IPv4
+  // sends the socket somewhere actually reachable.
+  dns.setDefaultResultOrder('ipv4first');
+
   smtpTransport = nodemailer.createTransport({
     host: config.email.smtp.host,
     port: config.email.smtp.port,
     secure: config.email.smtp.port === 465,
     auth: { user: config.email.smtp.user, pass: config.email.smtp.pass },
+    // Defaults let a blocked port hang for two minutes, which reads as a
+    // stuck request rather than a failure. Fail fast and log instead.
+    connectionTimeout: 15000,
+    greetingTimeout: 10000,
+    socketTimeout: 20000,
   });
-  logger.info(`Email service: SMTP configured (${config.email.smtp.host})`);
+  logger.info(
+    `Email service: SMTP configured (${config.email.smtp.host}:${config.email.smtp.port}, IPv4-first)`
+  );
 } else if (config.email.resendApiKey) {
   mode = 'resend';
   resend = new Resend(config.email.resendApiKey);
