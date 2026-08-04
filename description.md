@@ -8,7 +8,7 @@ The platform is built around three principles:
 
 1. **Automation first, clinical second.** Routine OTC dispensing happens at a self-service kiosk; anything risky escalates to the campus health centre's existing clinical workflow.
 2. **Auditability over magic.** Every AI decision (predicted disease, risk class, recommended medicine) is stored with confidence scores so any dispense can be reviewed after the fact.
-3. **No paid services required.** The whole stack runs on free tiers — Hugging Face Spaces for compute, MongoDB Atlas for the database, Resend (optional) for email.
+3. **No paid services required.** The whole stack runs on free tiers — Hugging Face Spaces for compute, MongoDB Atlas for the database, Brevo (optional) for email.
 
 ---
 
@@ -99,11 +99,16 @@ Safety guards in `adminUser.service.js`:
 
 `PasswordResetToken` model with a TTL index that auto-expires entries. Tokens are 32-byte random; only the SHA-256 hash is stored (replay-safe). The flow:
 
-1. `POST /api/auth/forgot-password` → invalidates prior tokens, mints a new one, emails the link via Resend.
-2. User clicks link → `/reset-password/:token` page → `POST /api/auth/reset-password`.
-3. Token is single-use; replay returns "invalid or expired" with no email-existence leak.
+1. `POST /api/auth/forgot-password` → invalidates prior tokens, mints a new one (60-min TTL), emails the link. The provider call is **not** awaited, so response time doesn't reveal whether the account exists.
+2. User opens `/reset-password/:token`; the page first calls `GET /api/auth/reset-password/:token/verify` and only renders the form for a valid token — an expired link says so before the user picks a password. A masked address (`s••••••@campus.edu`) is shown for orientation.
+3. `POST /api/auth/reset-password` → rejects a password identical to the current one, saves, marks the token used, invalidates any siblings, and sends a "your password was changed" notification.
+4. Token is single-use; replay returns "invalid or expired" with no email-existence leak.
 
-If `RESEND_API_KEY` is unset, the reset link is logged to the container console instead of emailed — useful for development and demos.
+Changing a password stamps `passwordChangedAt`, and `protect` rejects any JWT issued before it — so a reset ends every prior session rather than leaving a compromised token valid for the rest of its lifetime.
+
+Rate limits: 5 requests/hour per email address (caps inbox flooding) plus a looser 20/hour per IP. `trust proxy` is set so the per-IP limiter sees real client addresses rather than the edge proxy.
+
+**Email transport** is chosen at boot in the order **Brevo → SMTP → Resend → console**, and verified at startup so bad credentials appear in the logs immediately. With none configured the app still runs and reset links are written to the log. A *failed* send also logs the link — the raw token exists only in that request's closure (Mongo holds just the hash), so it's the only way to rescue a user manually.
 
 ### 8. Internationalisation
 
@@ -246,12 +251,15 @@ Compose secrets read from a root `.env` via `${VAR:?}` interpolation, so the sta
 | `JWT_EXPIRES_IN` | No | Express | Token lifetime (default `7d`). For kiosk-shared environments, set lower (`15m` is a sane minimum). |
 | `CLIENT_URL` | Yes | Express | Public origin of the app — used for CORS. |
 | `APP_URL` | Yes | Express | Public origin for password-reset links (usually same as `CLIENT_URL`). |
-| `RESEND_API_KEY` | No | Express | Resend API key for reset emails. If unset, reset links are logged to the container console. |
-| `EMAIL_FROM` | No | Express | Sender for reset emails. Defaults to `onboarding@resend.dev`. |
+| `BREVO_API_KEY` | No | Express | Brevo API key. Sends over HTTPS — **the only transport that works on HF Spaces** (see Security Notes). If unset, falls through to SMTP → Resend → console. |
+| `EMAIL_FROM` | No | Express | Sender for reset emails, e.g. `Campus Healthcare <you@gmail.com>`. Must be a **verified sender** on the provider account or mail is rejected. Defaults to `Campus Healthcare <SMTP_USER>` when SMTP is configured. |
+| `SMTP_USER` / `SMTP_PASS` | No | Express | Gmail address + **App Password** (16 chars, needs 2-Step Verification). Works on a VM; **not** on HF Spaces. |
+| `SMTP_HOST` / `SMTP_PORT` | No | Express | Default `smtp.gmail.com` / `587`. Port `465` switches to implicit TLS. |
+| `RESEND_API_KEY` | No | Express | Alternative HTTPS provider. Its shared `onboarding@resend.dev` sender only delivers to your own Resend account address; anyone else needs a verified domain. |
 | `AI_ORCHESTRATOR_URL` | No | Express | Override the kiosk pipeline URL. Defaults to `http://kiosk-ai:8100` (compose) or `http://127.0.0.1:8100` (HF). |
 | `AI_RISK_URL` / `AI_TREND_URL` / `AI_FORECAST_URL` | No | Express | Analytics URLs. All three point to the same nginx in the HF image. |
 
-For docker-compose, `MONGO_URI`, `NODE_ENV`, `PORT`, and AI URLs are wired automatically by `docker-compose.yml`. The root `.env` only needs `JWT_SECRET`, `CLIENT_URL`, `APP_URL`, and (optionally) the Resend keys.
+For docker-compose, `MONGO_URI`, `NODE_ENV`, `PORT`, and AI URLs are wired automatically by `docker-compose.yml`. The root `.env` only needs `JWT_SECRET`, `CLIENT_URL`, `APP_URL`, and (optionally) the email keys.
 
 ---
 
@@ -260,7 +268,10 @@ For docker-compose, `MONGO_URI`, `NODE_ENV`, `PORT`, and AI URLs are wired autom
 - Passwords hashed with bcrypt cost 12; never returned by `User.toJSON`.
 - Auth tokens signed with HS256; secret length minimum enforced.
 - Password reset tokens are single-use, SHA-256 hashed at rest, and TTL-expire.
-- The "forgot password" endpoint returns the same response whether the email exists or not (no email-enumeration leak).
+- The "forgot password" endpoint returns the same response whether the email exists or not, and does not await the mail provider — so neither the body nor the timing leaks whether an account exists.
+- Resetting a password stamps `passwordChangedAt`; JWTs issued earlier are rejected, so a reset terminates existing sessions.
+- Reset endpoints are rate limited per email (5/h) and per IP (20/h).
+- **HF Spaces blocks outbound SMTP.** Connections to `smtp.gmail.com` fail `ENETUNREACH` on IPv6 (no IPv6 route in the container) and time out on IPv4, on both 587 and 465. Use `BREVO_API_KEY`, which goes over 443 like the app's Atlas and PyTorch traffic.
 - Mongo's port is not exposed in either deploy path; only the Node container reaches it.
 - HF Spaces secrets are injected as environment variables, never written to disk.
 - The `0.0.0.0/0` Atlas allowlist is intentional for HF Spaces (no fixed egress IPs) — for VM deploys, restrict to the VM's IP.
@@ -275,7 +286,8 @@ For docker-compose, `MONGO_URI`, `NODE_ENV`, `PORT`, and AI URLs are wired autom
 | MongoDB Atlas M0 idle | 60 days no connections | Cluster auto-pauses; one-click resume in Atlas UI, no data loss. |
 | HF Spaces free | 16 GB RAM, 2 vCPU shared | All 10 AI services use ~3–4 GB at peak. |
 | HF Spaces sleep | After ~48 h idle | First request takes ~30 s to wake; no data loss. |
-| Resend free | 3 000 emails / month | Plenty for password resets on a campus scale. |
+| Brevo free | ~300 emails / day | Plenty for password resets on a campus scale. Verify current limits — providers change them. |
+| HF Spaces egress IP | Changes on restart | Observed three different AWS IPs in ~35 minutes. Never put the Space behind an IP allowlist (Brevo's, Atlas's, or anyone's). |
 
 ---
 

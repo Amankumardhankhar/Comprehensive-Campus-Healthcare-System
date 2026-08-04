@@ -26,7 +26,7 @@ An AI-enabled digital dispensary platform for campus health centres. Replaces pa
 | **ML libraries** | scikit-learn · statsmodels · PyTorch (CPU) · rapidfuzz |
 | **Database** | MongoDB 7 (bundled container for VM deploys) or MongoDB Atlas (for cloud) |
 | **Orchestration** | Docker · Docker Compose · single-container Hugging Face Spaces build |
-| **Auth** | JWT access tokens · password reset via Resend (optional) |
+| **Auth** | JWT access tokens · rate-limited password reset · email via Brevo / SMTP / Resend |
 
 ---
 
@@ -146,6 +146,51 @@ chmod +x start.sh && ./start.sh
 ```
 
 `start.sh` boots all AI services, the Express API, and the Vite dev server in parallel.
+
+---
+
+## Troubleshooting: password-reset emails
+
+Every failure below is invisible from the app's side — the API returns success and the
+user just never receives anything. Each now produces a specific line in the **Container
+logs**, so start there.
+
+**First, read the boot line.** The transport is verified at startup:
+
+```
+Email service: Brevo verified (account: you@gmail.com), sending as Campus Healthcare <you@gmail.com>
+```
+
+| Log line | Cause | Fix |
+|---|---|---|
+| `Brevo key rejected (HTTP 401)` with `unrecognised IP address` | Brevo's IP allowlist is enforcing. The Space's egress IP changes on every restart. | Brevo → Settings → Security → **Authorized IPs**. Keep "Blocking unauthorized IP addresses" **Deactivated** for both API and SMTP keys. |
+| `Brevo key rejected (HTTP 401)` without an IP mention | Wrong or revoked API key. | Regenerate under SMTP & API → API keys. Must be a v3 key (`xkeysib-…`), **not** an SMTP key. |
+| `EMAIL_FROM is still the placeholder` | `EMAIL_FROM` unset or left as `onboarding@resend.dev`. | Set it to an address verified under Brevo → Senders, domains, IPs. |
+| `sender you used … is not valid` (in Brevo's own logs) | The From address isn't a verified sender. | Add it under Senders and click the confirmation email Brevo sends. |
+| `SMTP verification FAILED (ENETUNREACH …:587)` | No IPv6 route in the container. | Don't use SMTP on Spaces — see below. |
+| `SMTP send failed: Connection timeout` | Outbound SMTP port is blocked. | Same — use `BREVO_API_KEY`. |
+
+> **Hugging Face Spaces blocks outbound SMTP.** Gmail SMTP cannot work there on any port
+> or credentials: IPv6 fails `ENETUNREACH` (no route in the container) and IPv4 times out
+> on both 587 and 465. HTTPS on 443 is unaffected — the same path Atlas and the PyTorch
+> weight download already use — so `BREVO_API_KEY` is the transport to use on a Space.
+> The `SMTP_USER`/`SMTP_PASS` path is kept for VM deploys, where SMTP is normally allowed.
+
+**Sending from a `@gmail.com` address is fine.** Brevo rewrites the envelope to its own
+authenticated subdomain (`…@NNNNNNN.brevosend.com`) while keeping your display name, which
+is what gets it past the Gmail/Yahoo DMARC rules for freemail senders.
+
+**Nothing in the provider's logs at all?** Then the app never called it. Check `BREVO_API_KEY`
+is present in the Space secrets, and look for `Email service: … configured` at boot.
+
+**Rescuing a locked-out user.** Any failed send logs the full reset link:
+
+```
+[password-reset] Delivery failed (mode=brevo) for someone@example.com. Link: https://…/reset-password/<token>
+```
+
+The raw token exists only for that request — the database stores just its SHA-256 hash — so
+this log line is the only way to recover it. Valid for 60 minutes.
 
 ---
 
